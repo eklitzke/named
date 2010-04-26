@@ -56,7 +56,7 @@ static void named_enc_character_string(const uint8_t *in_data, int in_len, uint8
 
 static const int NAMED_TTL = 300;
 static sqlite3 *named_db = NULL;
-static const char *NAMED_COL_DATA = "data";
+static const char *NAMED_COL_DATA = "rdata";
 static const char *NAMED_COL_TTL = "ttl";
 static const char *NAMED_COL_QCLASS = "qclass";
 static const char *NAMED_COL_QTYPE = "qtype";
@@ -84,16 +84,16 @@ static void named_query_name_class_qtype(const char *name, NamedQueryClass qclas
 {
     char *error_msg = NULL;
     char sql[256 + strlen(name)];
-    NAMED_LOG_DEBUG("query: %s, class: %d, type: %d", name, qtype, qclass);
+    NAMED_LOG_DEBUG("query: %s, class: %d, type: %d", name, qclass, qtype);
 
     if (qtype != NamedWildcardQueryType && qclass != NamedWildcardQueryClass)
-        sprintf(sql, "SELECT name, qtype, qclass, data, ttl FROM responses WHERE name = '%s' AND qclass = %d AND qtype = %d", name, (int)qclass, (int)qtype);
+        sprintf(sql, "SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s' AND qclass = %d AND qtype = %d", name, (int)qclass, (int)qtype);
     else if (qtype == NamedWildcardQueryType)
-        sprintf(sql, "SELECT name, qtype, qclass, data, ttl FROM responses WHERE name = '%s' AND qclass = %d", name, (int)qclass);
+        sprintf(sql, "SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s' AND qclass = %d", name, (int)qclass);
     else if (qclass == NamedWildcardQueryClass)
-        sprintf(sql, "SELECT name, qtype, qclass, data, ttl FROM responses WHERE name = '%s' AND qtype = %d", name, (int)qtype);
+        sprintf(sql, "SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s' AND qtype = %d", name, (int)qtype);
     else
-        sprintf(sql, "SELECT name, qtype, qclass, data, ttl FROM responses WHERE name = '%s'", name);
+        sprintf(sql, "SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s'", name);
 
     int query_name_response(void *ctx, int col_count, char **data, char **column_names) {
         const char *response_data = "";
