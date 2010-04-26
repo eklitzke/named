@@ -1,6 +1,5 @@
 CC ?= gcc
 CFLAGS += -std=c99
-CFLAGS += $$(pkg-config --cflags --libs glib-2.0)
 CFLAGS += $$(pkg-config --cflags --libs libevent)
 CFLAGS += $$(pkg-config --cflags --libs sqlite3)
 
