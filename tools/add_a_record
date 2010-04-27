@@ -25,5 +25,5 @@ if __name__ == '__main__':
 	conn = sqlite3.connect(opts.database)
 	c = conn.cursor()
 	c.execute('DELETE FROM responses WHERE name = ?', (opts.name,))
-	c.execute('INSERT INTO responses (name, qclass, qtype, ttl, data) VALUES (?, 1, 1, 120, ?)', (opts.name, inet_aton(opts.ip)))
+	c.execute('INSERT INTO responses (name, qclass, qtype, ttl, rdata) VALUES (?, 1, 1, 120, ?)', (opts.name, inet_aton(opts.ip)))
 	conn.commit()

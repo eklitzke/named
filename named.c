@@ -83,60 +83,64 @@ static NamedLogLevel named_log_level = NamedInfoLogLevel;
 static void named_query_name_class_qtype(const char *name, NamedQueryClass qclass, NamedQueryType qtype, NamedAnswerFunc on_answer)
 {
     char *error_msg = NULL;
-    char sql[256 + strlen(name)];
+    char *sql;
     NAMED_LOG_DEBUG("query: %s, class: %d, type: %d", name, qclass, qtype);
 
     if (qtype != NamedWildcardQueryType && qclass != NamedWildcardQueryClass)
-        sprintf(sql, "SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s' AND qclass = %d AND qtype = %d", name, (int)qclass, (int)qtype);
+        sql = sqlite3_mprintf("SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s' AND qclass = %d AND qtype = %d", name, (int) qclass, (int) qtype);
     else if (qtype == NamedWildcardQueryType)
-        sprintf(sql, "SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s' AND qclass = %d", name, (int)qclass);
+        sql = sqlite3_mprintf("SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s' AND qclass = %d", name, (int) qclass);
     else if (qclass == NamedWildcardQueryClass)
-        sprintf(sql, "SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s' AND qtype = %d", name, (int)qtype);
+        sql = sqlite3_mprintf("SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s' AND qtype = %d", name, (int) qtype);
     else
-        sprintf(sql, "SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s'", name);
+        sql = sqlite3_mprintf("SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s'", name);
 
-    int query_name_response(void *ctx, int col_count, char **data, char **column_names) {
-        const char *response_data = "";
-        const char *response_name = "";
-        NamedQueryClass response_qclass = NamedInternetQueryClass;
-        NamedQueryType response_qtype = 0;
-        int response_ttl = NAMED_TTL;
-        int response_data_len = 0;
-        for (int i = 0; i < col_count; i++) {
-            const char *col = column_names[i];
-            const char *val = data[i];
-            if (val == NULL)
-                continue;
-            if (strcmp(col, NAMED_COL_DATA) == 0) {
-                response_data = val;
-                response_data_len = strlen(val);
-            } else if (strcmp(col, NAMED_COL_TTL) == 0)
-                response_ttl = atoi(val);
-            else if (strcmp(col, NAMED_COL_NAME) == 0)
-                response_name = val;
-            else if (strcmp(col, NAMED_COL_QCLASS) == 0)
-                response_qclass = atoi(val);
-            else if (strcmp(col, NAMED_COL_QTYPE) == 0)
-                response_qtype = atoi(val);
-        }
-
-        if (response_qtype == NamedTxtQueryType) {
-            int buf_size = response_data_len + (response_data_len / 255) + 16;
-            char *buf = alloca(buf_size);
-            named_enc_character_string(response_data, strlen(response_data), buf, &buf_size, 255);
-            response_data = buf;
-            response_data_len = buf_size;
-        }
-        on_answer(response_name, response_data, response_data_len, response_ttl, response_qclass, response_qtype);
-        return 0;
+    const char *response_data = "";
+    const char *response_name = "";
+    NamedQueryClass response_qclass = NamedInternetQueryClass;
+    NamedQueryType response_qtype = 0;
+    int response_ttl = NAMED_TTL;
+    int response_data_len = 0;
+    
+    const char *left;
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(named_db, sql, -1, &stmt, &left);
+    if ((rc == SQLITE_BUSY) || (rc == SQLITE_LOCKED)) {
+        NAMED_LOG_ERROR("the sqlite database seems to be locked or busy");
+    } else if (rc != SQLITE_OK) {
+        NAMED_LOG_ERROR("unknown error while preparing sqlite statement: rc = %d", rc);
     }
 
-    int rc = sqlite3_exec(named_db, sql, query_name_response, 0, &error_msg);
-    if (rc != SQLITE_OK) {
-        NAMED_LOG_ERROR("SQL Error: %s", error_msg);
-        sqlite3_free(error_msg);
-        exit(1);
+    sqlite3_reset(stmt);
+    while (1) {
+        rc = sqlite3_step(stmt);
+        if (rc == SQLITE_DONE) {
+            // query is done returning results, nothing to see here
+            break;
+        } else if (rc == SQLITE_OK || rc == SQLITE_ROW) {
+            response_name = sqlite3_column_text(stmt, 0);
+            response_qtype = sqlite3_column_int(stmt, 1);
+            response_qclass = sqlite3_column_int(stmt, 2);
+            response_data = sqlite3_column_blob(stmt, 3);
+            response_data_len = sqlite3_column_bytes(stmt, 3);
+            response_ttl = sqlite3_column_int(stmt, 4);
+
+            if (response_qtype == NamedTxtQueryType) {
+                int buf_size = response_data_len + (response_data_len / 255) + 16;
+                char *buf = alloca(buf_size);
+                named_enc_character_string(response_data, strlen(response_data), buf, &buf_size, 255);
+                response_data = buf;
+                response_data_len = buf_size;
+            }
+            on_answer(response_name, response_data, response_data_len, response_ttl, response_qclass, response_qtype);
+        } else {
+            NAMED_LOG_ERROR("unknown error in sqlite3_step: rc = %d", rc);
+            exit(1);
+        }
     }
+    sqlite3_finalize(stmt);
+    sqlite3_free(sql);
+
 }
 
 static void named_enc_character_string(const uint8_t *in_data, int in_len, uint8_t *out_data, int *out_len, uint8_t max_chunk_size)
@@ -164,7 +168,7 @@ static void named_on_evdns_request(struct evdns_server_request *req, void *data)
     for (int i = 0; i < req->nquestions; i++) {
         struct evdns_server_question *question = req->questions[i];
         void on_answer(const char *name, const char *data, int data_len, int ttl, NamedQueryClass qclass, NamedQueryType qtype) {
-            NAMED_LOG_DEBUG("answer name: %s, data: %s", name, data);
+            NAMED_LOG_DEBUG("answer name: %s, data: (%d bytes)", name, data_len);
 
             NAMED_EV_CHECK("add reply", evdns_server_request_add_reply(
                 req,
