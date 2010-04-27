@@ -84,6 +84,18 @@ static void named_query_name_class_qtype(const char *name, NamedQueryClass qclas
 {
     char *error_msg = NULL;
     char *sql;
+    char *buf;
+    const char *response_data = "";
+    const char *response_name = "";
+    const char *left;
+    NamedQueryClass response_qclass = NamedInternetQueryClass;
+    NamedQueryType response_qtype = 0;
+    int response_ttl = NAMED_TTL;
+    int response_data_len = 0;
+    int rc = 0;
+    int buf_size;
+    sqlite3_stmt *stmt;
+
     NAMED_LOG_DEBUG("query: %s, class: %d, type: %d", name, qclass, qtype);
 
     if (qtype != NamedWildcardQueryType && qclass != NamedWildcardQueryClass)
@@ -95,16 +107,7 @@ static void named_query_name_class_qtype(const char *name, NamedQueryClass qclas
     else
         sql = sqlite3_mprintf("SELECT name, qtype, qclass, rdata, ttl FROM responses WHERE name = '%s'", name);
 
-    const char *response_data = "";
-    const char *response_name = "";
-    NamedQueryClass response_qclass = NamedInternetQueryClass;
-    NamedQueryType response_qtype = 0;
-    int response_ttl = NAMED_TTL;
-    int response_data_len = 0;
-    
-    const char *left;
-    sqlite3_stmt *stmt;
-    int rc = sqlite3_prepare_v2(named_db, sql, -1, &stmt, &left);
+    rc = sqlite3_prepare_v2(named_db, sql, -1, &stmt, &left);
     if ((rc == SQLITE_BUSY) || (rc == SQLITE_LOCKED)) {
         NAMED_LOG_ERROR("the sqlite database seems to be locked or busy");
     } else if (rc != SQLITE_OK) {
@@ -126,8 +129,8 @@ static void named_query_name_class_qtype(const char *name, NamedQueryClass qclas
             response_ttl = sqlite3_column_int(stmt, 4);
 
             if (response_qtype == NamedTxtQueryType) {
-                int buf_size = response_data_len + (response_data_len / 255) + 16;
-                char *buf = alloca(buf_size);
+                buf_size = response_data_len + (response_data_len / 255) + 16;
+                buf = alloca(buf_size);
                 named_enc_character_string(response_data, strlen(response_data), buf, &buf_size, 255);
                 response_data = buf;
                 response_data_len = buf_size;
